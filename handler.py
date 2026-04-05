@@ -11,6 +11,7 @@ import subprocess
 import librosa
 import shutil
 import time
+import importlib.util
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -198,6 +199,29 @@ def get_videos(prompt, input_type="image", person_count="single"):
 
     if not history:
         raise Exception("ComfyUI history를 찾을 수 없습니다.")
+
+    status_info = history.get("status", {}) if isinstance(history, dict) else {}
+    status_messages = status_info.get("messages", []) if isinstance(status_info, dict) else []
+
+    if not history.get("outputs"):
+        # ComfyUI가 completed로 종료되더라도 내부 노드 예외가 messages에 남는 경우가 있어 상세 메시지를 우선 반환
+        if status_messages:
+            try:
+                detailed_errors = []
+                for message in status_messages:
+                    if isinstance(message, (list, tuple)) and len(message) > 1:
+                        payload = message[1]
+                        if isinstance(payload, dict):
+                            if "exception_message" in payload:
+                                detailed_errors.append(str(payload["exception_message"]))
+                            elif "error" in payload:
+                                detailed_errors.append(str(payload["error"]))
+                if detailed_errors:
+                    raise Exception(
+                        f"ComfyUI 출력 없음 (노드 오류): {' | '.join(detailed_errors)}"
+                    )
+            except Exception:
+                raise
 
     if not history.get("outputs"):
         raise Exception(f"ComfyUI 폴링 시간 초과 ({poll_timeout_sec}초)")
@@ -453,6 +477,32 @@ def handler(job):
         logger.info(f"✅ 노드 {sampler_node_id} (WanVideoSampler) 업데이트됨: force_offload={force_offload}")
     else:
         logger.warning("⚠️ 경고: WanVideoSampler 노드를 찾을 수 없습니다. 워크플로우 기본값을 사용합니다.")
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # 동적 Attention Mode 설정 (sageattention 미설치 환경 보호)
+    # ------------------------------------------------------------------
+    requested_attention_mode = job_input.get("attention_mode")
+    sage_available = importlib.util.find_spec("sageattention") is not None
+
+    for node_id, node_data in prompt.items():
+        if node_data.get("class_type") != "WanVideoModelLoader":
+            continue
+
+        inputs = node_data.setdefault("inputs", {})
+        current_mode = str(inputs.get("attention_mode", "sdpa"))
+        target_mode = str(requested_attention_mode or current_mode)
+
+        if "sage" in target_mode.lower() and not sage_available:
+            logger.warning(
+                "⚠️ 노드 %s attention_mode=%s 이지만 sageattention 미설치로 sdpa로 대체합니다.",
+                node_id,
+                target_mode,
+            )
+            target_mode = "sdpa"
+
+        inputs["attention_mode"] = target_mode
+        logger.info("✅ 노드 %s (WanVideoModelLoader) attention_mode=%s", node_id, target_mode)
     # ------------------------------------------------------------------
 
     # 파일 존재 여부 확인
