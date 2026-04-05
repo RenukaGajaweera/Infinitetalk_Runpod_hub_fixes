@@ -15,6 +15,7 @@ import time
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info("RunPod handler module loaded. Initializing serverless worker...")
 
 
 def truncate_base64_for_log(base64_str, max_length=50):

@@ -1,5 +1,7 @@
 # Use a broadly compatible RunPod ComfyUI base image.
-FROM runpod/comfyui:1.3.0-cuda12.8 as runtime
+FROM runpod/comfyui:1.3.0-cuda12.8 AS runtime
+
+ENV PYTHONUNBUFFERED=1
 
 # wget 설치 (URL 다운로드를 위해)
 RUN apt-get update && apt-get install -y wget ffmpeg && rm -rf /var/lib/apt/lists/*
@@ -65,4 +67,4 @@ RUN wget -q https://huggingface.co/Kijai/MelBandRoFormer_comfy/resolve/main/MelB
 COPY . .
 RUN chmod +x /entrypoint.sh
 
-CMD ["/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
