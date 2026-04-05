@@ -8,6 +8,7 @@ import urllib.request
 import urllib.parse
 import binascii  # Base64 에러 처리를 위해 import
 import subprocess
+import math
 import librosa
 import shutil
 import time
@@ -320,6 +321,15 @@ def calculate_max_frames_from_audio(wav_path, wav_path_2=None, fps=25):
     return max_frames
 
 
+def calculate_max_frames_from_duration(duration_seconds, fps=25):
+    """사용자 지정 비디오 길이(초)를 기반으로 max_frames를 계산"""
+    max_frames = int(math.ceil(duration_seconds * fps)) + 81
+    logger.info(
+        f"사용자 지정 duration: {duration_seconds:.2f}초, 계산된 max_frames: {max_frames}"
+    )
+    return max_frames
+
+
 def handler(job):
     job_input = job.get("input", {})
 
@@ -426,15 +436,31 @@ def handler(job):
     width = job_input.get("width", 512)
     height = job_input.get("height", 512)
 
-    # max_frame 설정 (입력이 없으면 오디오 길이 기반으로 자동 계산)
+    # max_frame 설정
+    # 우선순위: max_frame > duration > 오디오 길이 자동 계산
     max_frame = job_input.get("max_frame")
+    requested_duration = job_input.get("duration")
     if max_frame is None:
-        logger.info(
-            "max_frame이 입력되지 않았습니다. 오디오 길이를 기반으로 자동 계산합니다."
-        )
-        max_frame = calculate_max_frames_from_audio(
-            wav_path, wav_path_2 if person_count == "multi" else None
-        )
+        if requested_duration is not None:
+            try:
+                duration_seconds = float(requested_duration)
+                if duration_seconds <= 0:
+                    raise ValueError("duration must be greater than 0")
+                max_frame = calculate_max_frames_from_duration(duration_seconds)
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"유효하지 않은 duration 값({requested_duration})입니다. 오디오 길이 기반 자동 계산으로 대체합니다: {e}"
+                )
+                max_frame = calculate_max_frames_from_audio(
+                    wav_path, wav_path_2 if person_count == "multi" else None
+                )
+        else:
+            logger.info(
+                "max_frame과 duration이 입력되지 않았습니다. 오디오 길이를 기반으로 자동 계산합니다."
+            )
+            max_frame = calculate_max_frames_from_audio(
+                wav_path, wav_path_2 if person_count == "multi" else None
+            )
     else:
         logger.info(f"사용자 지정 max_frame: {max_frame}")
 

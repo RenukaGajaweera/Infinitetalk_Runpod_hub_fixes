@@ -86,9 +86,12 @@ The `input` object must contain the following fields. Images, videos, and audio 
 | `prompt` | `string` | No | `"A person talking naturally"` | Description text for the video to be generated |
 | `width` | `integer` | No | `512` | Width of the output video in pixels |
 | `height` | `integer` | No | `512` | Height of the output video in pixels |
+| `duration` | `number` | No | Auto-calculated | Target output duration in seconds. Useful to add buffer (e.g., audio 10s -> duration 11s). Ignored if `max_frame` is provided. |
 | `max_frame` | `integer` | No | Auto-calculated | Maximum number of frames for the output video (automatically calculated based on audio duration if not provided) |
 | `force_offload` | `boolean` | No | `true` | Whether to offload model components to CPU during inference. Set to `false` for ~1.5x faster processing on high-VRAM GPUs (24GB+). Default `true` prevents OOM on smaller GPUs. |
 | `network_volume` | `boolean` | No | `false` | Whether to use network volume for output storage. If `true`, returns file path instead of Base64 data |
+
+Parameter priority for output length: `max_frame` > `duration` > audio-length auto-calc.
 
 **Request Examples:**
 
@@ -101,6 +104,7 @@ The `input` object must contain the following fields. Images, videos, and audio 
     "prompt": "A person is talking in a natural way.",
     "image_url": "https://example.com/portrait.jpg",
     "wav_url": "https://example.com/audio.wav",
+    "duration": 11,
     "width": 512,
     "height": 512
   }
