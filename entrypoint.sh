@@ -44,9 +44,21 @@ else
     exit 1
 fi
 
+# Enable sage attention only when explicitly requested and available.
+# Set USE_SAGE_ATTENTION=true to request it.
+COMFY_EXTRA_ARGS=()
+if [ "${USE_SAGE_ATTENTION:-false}" = "true" ]; then
+    if "${PYTHON_BIN}" -c "import sageattention" >/dev/null 2>&1; then
+        COMFY_EXTRA_ARGS+=("--use-sage-attention")
+        echo "Sage attention enabled"
+    else
+        echo "Warning: USE_SAGE_ATTENTION=true but sageattention is not installed. Starting without --use-sage-attention."
+    fi
+fi
+
 # Start ComfyUI in the background
 echo "Starting ComfyUI in the background..."
-"${PYTHON_BIN}" "${COMFY_MAIN}" --listen 0.0.0.0 --port 8188 --use-sage-attention &
+"${PYTHON_BIN}" "${COMFY_MAIN}" --listen 0.0.0.0 --port 8188 "${COMFY_EXTRA_ARGS[@]}" &
 COMFY_PID=$!
 
 # Wait for ComfyUI to be ready
