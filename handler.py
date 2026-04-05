@@ -1,6 +1,5 @@
 import runpod
 import os
-import websocket
 import base64
 import json
 import uuid
@@ -11,6 +10,7 @@ import binascii  # Base64 에러 처리를 위해 import
 import subprocess
 import librosa
 import shutil
+import time
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +48,11 @@ def download_file_from_url(url, output_path):
             return output_path
         else:
             logger.error(f"❌ wget 다운로드 실패: {result.stderr}")
+            stderr_lower = (result.stderr or "").lower()
+            if "403" in stderr_lower or "forbidden" in stderr_lower:
+                raise Exception(
+                    "URL 다운로드 실패(403 Forbidden). 공개 URL이 아니면 서명된 URL을 사용하세요."
+                )
             raise Exception(f"URL 다운로드 실패: {result.stderr}")
     except subprocess.TimeoutExpired:
         logger.error("❌ 다운로드 시간 초과")
@@ -163,27 +168,41 @@ def get_history(prompt_id):
         return json.loads(response.read())
 
 
-def get_videos(ws, prompt, input_type="image", person_count="single"):
+def get_videos(prompt, input_type="image", person_count="single"):
     prompt_id = queue_prompt(prompt, input_type, person_count)["prompt_id"]
     logger.info(f"워크플로우 실행 시작: prompt_id={prompt_id}")
 
-    output_videos = {}
-    while True:
-        out = ws.recv()
-        if isinstance(out, str):
-            message = json.loads(out)
-            if message["type"] == "executing":
-                data = message["data"]
-                if data["node"] is not None:
-                    logger.info(f"노드 실행 중: {data['node']}")
-                if data["node"] is None and data["prompt_id"] == prompt_id:
-                    logger.info("워크플로우 실행 완료")
-                    break
-        else:
-            continue
+    logger.info("웹소켓 대신 history polling으로 실행 상태를 확인합니다.")
+    poll_timeout_sec = int(os.getenv("POLL_TIMEOUT_SEC", "1800"))
+    poll_interval_sec = float(os.getenv("POLL_INTERVAL_SEC", "2"))
+    deadline = time.time() + poll_timeout_sec
 
+    history = None
+    while time.time() < deadline:
+        history_map = get_history(prompt_id)
+        history = history_map.get(prompt_id)
+        if history:
+            status_info = history.get("status", {})
+            status_str = str(status_info.get("status_str", "")).lower()
+            completed = bool(status_info.get("completed", False))
+
+            if completed or status_str == "success" or history.get("outputs"):
+                logger.info("워크플로우 실행 완료")
+                break
+
+            if status_str in {"error", "failed"}:
+                raise Exception(f"ComfyUI 실행 실패: {status_info}")
+
+        time.sleep(poll_interval_sec)
+
+    if not history:
+        raise Exception("ComfyUI history를 찾을 수 없습니다.")
+
+    if not history.get("outputs"):
+        raise Exception(f"ComfyUI 폴링 시간 초과 ({poll_timeout_sec}초)")
+
+    output_videos = {}
     logger.info(f"히스토리 조회 중: prompt_id={prompt_id}")
-    history = get_history(prompt_id)[prompt_id]
     logger.info(f"출력 노드 수: {len(history['outputs'])}")
 
     for node_id in history["outputs"]:
@@ -479,9 +498,6 @@ def handler(job):
             if "313" in prompt:
                 prompt["313"]["inputs"]["audio"] = wav_path_2
 
-    ws_url = f"ws://{server_address}:8188/ws?clientId={client_id}"
-    logger.info(f"Connecting to WebSocket: {ws_url}")
-
     # 먼저 HTTP 연결이 가능한지 확인
     http_url = f"http://{server_address}:8188/"
     logger.info(f"Checking HTTP connection to: {http_url}")
@@ -505,24 +521,7 @@ def handler(job):
                 )
             time.sleep(1)
 
-    ws = websocket.WebSocket()
-    # 웹소켓 연결 시도 (최대 3분)
-    max_attempts = int(180 / 5)  # 3분 (1초에 한 번씩 시도)
-    for attempt in range(max_attempts):
-        import time
-
-        try:
-            ws.connect(ws_url)
-            logger.info(f"웹소켓 연결 성공 (시도 {attempt+1})")
-            break
-        except Exception as e:
-            logger.warning(f"웹소켓 연결 실패 (시도 {attempt+1}/{max_attempts}): {e}")
-            if attempt == max_attempts - 1:
-                raise Exception("웹소켓 연결 시간 초과 (3분)")
-            time.sleep(5)
-    videos = get_videos(ws, prompt, input_type, person_count)
-    ws.close()
-    logger.info("웹소켓 연결 종료")
+    videos = get_videos(prompt, input_type, person_count)
 
     # 비디오가 없는 경우 처리
     output_video_path = None

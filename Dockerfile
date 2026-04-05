@@ -1,8 +1,8 @@
-# Use specific version of nvidia cuda image
-FROM wlsdml1114/engui_genai-base_blackwell:1.1 as runtime
+# Use a broadly compatible RunPod ComfyUI base image.
+FROM runpod/comfyui:1.3.0-cuda12.8 as runtime
 
 # wget 설치 (URL 다운로드를 위해)
-RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y wget ffmpeg && rm -rf /var/lib/apt/lists/*
 
 RUN pip install -U "huggingface_hub[hf_transfer]"
 RUN pip install runpod websocket-client librosa
