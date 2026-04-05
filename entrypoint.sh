@@ -20,9 +20,33 @@ fi
 
 echo "Using python executable: ${PYTHON_BIN}"
 
+# Resolve ComfyUI main path across base image variants.
+COMFY_MAIN=""
+if [ -f "/ComfyUI/main.py" ]; then
+    COMFY_MAIN="/ComfyUI/main.py"
+elif [ -f "/workspace/runpod-slim/ComfyUI/main.py" ]; then
+    COMFY_MAIN="/workspace/runpod-slim/ComfyUI/main.py"
+else
+    echo "Error: ComfyUI main.py not found"
+    exit 1
+fi
+
+echo "Using ComfyUI entrypoint: ${COMFY_MAIN}"
+
+# Resolve handler path.
+HANDLER_MAIN=""
+if [ -f "/handler.py" ]; then
+    HANDLER_MAIN="/handler.py"
+elif [ -f "/workspace/handler.py" ]; then
+    HANDLER_MAIN="/workspace/handler.py"
+else
+    echo "Error: handler.py not found"
+    exit 1
+fi
+
 # Start ComfyUI in the background
 echo "Starting ComfyUI in the background..."
-"${PYTHON_BIN}" /ComfyUI/main.py --listen 0.0.0.0 --port 8188 --use-sage-attention &
+"${PYTHON_BIN}" "${COMFY_MAIN}" --listen 0.0.0.0 --port 8188 --use-sage-attention &
 COMFY_PID=$!
 
 # Wait for ComfyUI to be ready
@@ -52,4 +76,4 @@ fi
 # Start the handler in the foreground
 # 이 스크립트가 컨테이너의 메인 프로세스가 됩니다.
 echo "Starting the RunPod handler worker..."
-exec "${PYTHON_BIN}" -u /handler.py
+exec "${PYTHON_BIN}" -u "${HANDLER_MAIN}"
